@@ -12,24 +12,16 @@
 汽车
 +发布
 
-大疆
-DJI
-
-宇树
-王兴兴
-
 智元
 灵犀
 稚晖君
 彭志辉
 
-京东
-刘强东
-
 游戏
 PS5
 switch
 steam
+Epic
 
 特斯拉
 马斯克
@@ -55,12 +47,15 @@ sora
 claude
 Anthropic
 
+苹果
+Apple
 iphone
 ipad
 mac
 ios
+！水果
 
-ai
+AI
 !gai
 人工智能
 
