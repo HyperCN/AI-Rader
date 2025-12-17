@@ -53,4 +53,4 @@ jobs:
           fi
 
       - name: Push to current repo
-        run: git push origin main
+        run: git push origin master
