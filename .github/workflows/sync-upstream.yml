@@ -19,6 +19,7 @@ jobs:
         with:
           # 上游仓库地址（sansan0/TrendRadar）
           source_repo: sansan0/TrendRadar
+          source_repo_path: /
           # 上游分支（根据上游仓库的实际主分支名称调整，通常为main或master）
           upstream_branch: master
           # 您仓库的目标分支（根据您的实际主分支名称调整）
