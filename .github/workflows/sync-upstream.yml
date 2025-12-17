@@ -49,10 +49,10 @@ jobs:
       - name: Merge upstream into current branch
         run: |
           # 切换到当前仓库的主分支（根据你的仓库分支名调整，如master）
-          git checkout main
+          git checkout master
           # 合并上游的main分支（第一次合并时需加--allow-unrelated-histories，因为template的历史分离）
           # --no-edit：自动合并，不弹出提交信息编辑窗口
-          git merge upstream/main --allow-unrelated-histories --no-edit || {
+          git merge upstream/master --allow-unrelated-histories --no-edit || {
             # 若合并失败（存在冲突），这里可自定义处理逻辑（如输出冲突信息并失败）
             echo "合并上游代码时出现冲突，请手动处理！"
             exit 1
@@ -60,4 +60,4 @@ jobs:
 
       # 步骤6：推送合并后的代码到当前仓库
       - name: Push to current repo
-        run: git push origin main
+        run: git push origin master
