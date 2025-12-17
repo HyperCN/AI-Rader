@@ -2,7 +2,7 @@ name: Sync Upstream via PR
 on:
   workflow_dispatch: # 允许手动触发
   schedule:
-    - cron: '0 8 * * *' # 每周一UTC时间3点（北京时间上午11点）自动运行
+    - cron: '0 3 * * 1' # 每周一UTC时间3点（北京时间上午11点）自动运行
 
 permissions:
   contents: write
@@ -12,51 +12,82 @@ jobs:
   sync-upstream:
     runs-on: ubuntu-latest
     steps:
+      # 1. 检出您自己的仓库
       - name: Checkout Your Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # 拉取完整历史，便于比较
+          fetch-depth: 0
 
+      # 2. 配置Git身份
       - name: Setup Git
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Fetch Upstream Changes
+      # 3. 添加上游仓库并拉取更新
+      - name: Add and Fetch Upstream
         run: |
           git remote add upstream https://github.com/sansan0/TrendRadar.git 2>/dev/null || true
-          git fetch upstream
+          git fetch upstream --force
+          echo "✅ 已拉取上游仓库 (sansan0/TrendRadar) 的更新。"
 
-      - name: Create a New Branch with Upstream Code
+      # 4. 基于上游的 master 分支创建同步分支
+      - name: Create Branch from Upstream Master
+        id: create-branch
         run: |
-          # 基于上游最新代码创建一个全新的临时分支
-          git checkout -b sync/upstream-$(date +%s) upstream/master --no-track
-          echo "已基于上游代码创建分支: $(git branch --show-current)"
+          # 确认上游 master 分支存在
+          if ! git show-ref --verify --quiet refs/remotes/upstream/master; then
+            echo "❌ 错误：上游仓库中未找到 'master' 分支。"
+            exit 1
+          fi
+          # 创建唯一的同步分支名
+          SYNC_BRANCH="sync/upstream-$(date +%Y%m%d-%H%M%S)"
+          git checkout -b "$SYNC_BRANCH" upstream/master --no-track
+          echo "✅ 已创建同步分支: $SYNC_BRANCH"
+          # 将分支名设置为输出，供后续步骤使用
+          echo "branch-name=$SYNC_BRANCH" >> $GITHUB_OUTPUT
 
-      - name: Restore Your Protected Files
+      # 5. 恢复您需要保护的文件 (从您自己仓库的【主分支】)
+      - name: Restore Protected Files
         run: |
-          # 关键步骤：用您自己仓库主分支的版本，覆盖临时分支中的配置文件
-          # 这确保了您的 config.yaml 和 frequency_words.txt 永远不会被上游覆盖
-          git checkout origin/master -- config.yaml frequency_words.txt 2>/dev/null || echo "注意：未找到部分文件，将继续。"
-          # 如果有更改，则提交
-          if ! git diff --cached --quiet && git add config.yaml frequency_words.txt; then
-            git commit -m "chore: restore protected config files (config.yaml, frequency_words.txt)"
+          # 【重要】请将 `master` 改为您自己 AI-Rader 仓库的主分支名 (可能是 main)
+          YOUR_BASE_BRANCH="master"
+          echo "正在从 origin/$YOUR_BASE_BRANCH 恢复受保护文件..."
+          # 尝试恢复文件，如果文件不存在则忽略
+          if git checkout "origin/$YOUR_BASE_BRANCH" -- config.yaml 2>/dev/null; then
+            echo "  已恢复 config.yaml"
+          fi
+          if git checkout "origin/$YOUR_BASE_BRANCH" -- frequency_words.txt 2>/dev/null; then
+            echo "  已恢复 frequency_words.txt"
+          fi
+          # 如果有文件被更改，则提交
+          if ! git diff --staged --quiet && git add config.yaml frequency_words.txt; then
+            git commit -m "chore(sync): restore protected files from origin/$YOUR_BASE_BRANCH"
+            echo "✅ 已提交文件恢复。"
+          else
+            echo "ℹ️  受保护文件无更改，无需提交。"
           fi
 
+      # 6. 创建 Pull Request
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "chore: sync updates from upstream TrendRadar"
-          title: "🔄 自动同步：上游 TrendRadar 更新"
+          title: "🔄 自动同步：上游 TrendRadar 更新 [$(date +%Y-%m-%d)]"
           body: |
-            此 Pull Request 由 GitHub Actions 自动创建，包含来自上游仓库 [sansan0/TrendRadar](https://github.com/sansan0/TrendRadar) 的更新。
+            此 PR 由 GitHub Actions 自动创建，包含来自上游仓库 [sansan0/TrendRadar](https://github.com/sansan0/TrendRadar) 的更新。
 
-            **本次同步已保护以下文件，您的修改将被保留：**
+            **已保护以下文件 (您的本地版本被保留):**
             - `config.yaml`
             - `frequency_words.txt`
 
-            请仔细检查其他文件的变更，确认无误后合并此PR。
-          branch: "auto-sync/trendradar" # 用于创建PR的临时分支
-          base: master # 目标分支（请确认您的主分支名是 master 还是 main）
-          delete-branch: true # PR合并后自动删除临时分支
+            请检查其他文件的变更，确认无误后合并。
+          # 源分支：使用上一步创建的分支
+          branch: ${{ steps.create-branch.outputs.branch-name }}
+          # 【重要】目标分支：必须改为您 AI-Rader 仓库的主分支名
+          base: master
+          labels: automated-pr, upstream-sync
+          delete-branch: true
+          # 如果没有任何文件变更，则跳过创建PR（静默成功）
+          skip-if-empty: true
