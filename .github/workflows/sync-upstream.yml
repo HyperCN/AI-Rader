@@ -1,39 +1,62 @@
-name: 'Sync Upstream Template'
+name: Sync Upstream via PR
 on:
-  workflow_dispatch:
+  workflow_dispatch: # 允许手动触发
   schedule:
-    - cron: '0 3 * * 1'
-
-# === 新增：全局环境变量，用PAT覆盖默认令牌 ===
-env:
-  GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
+    - cron: '0 8 * * *' # 每周一UTC时间3点（北京时间上午11点）自动运行
 
 permissions:
   contents: write
   pull-requests: write
 
 jobs:
-  sync:
+  sync-upstream:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      - name: Checkout Your Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-          # 重要：删除或注释掉显式的 token 配置，让其自动使用上方的 GITHUB_TOKEN
-          # token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0 # 拉取完整历史，便于比较
 
-      - name: Sync from TrendRadar template
-        uses: AndreasAugustin/actions-template-sync@v0.8.0
+      - name: Setup Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch Upstream Changes
+        run: |
+          git remote add upstream https://github.com/sansan0/TrendRadar.git 2>/dev/null || true
+          git fetch upstream
+
+      - name: Create a New Branch with Upstream Code
+        run: |
+          # 基于上游最新代码创建一个全新的临时分支
+          git checkout -b sync/upstream-$(date +%s) upstream/main --no-track
+          echo "已基于上游代码创建分支: $(git branch --show-current)"
+
+      - name: Restore Your Protected Files
+        run: |
+          # 关键步骤：用您自己仓库主分支的版本，覆盖临时分支中的配置文件
+          # 这确保了您的 config.yaml 和 frequency_words.txt 永远不会被上游覆盖
+          git checkout origin/master -- config.yaml frequency_words.txt 2>/dev/null || echo "注意：未找到部分文件，将继续。"
+          # 如果有更改，则提交
+          if ! git diff --cached --quiet && git add config.yaml frequency_words.txt; then
+            git commit -m "chore: restore protected config files (config.yaml, frequency_words.txt)"
+          fi
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
         with:
-          source_repo: sansan0/TrendRadar
-          source_repo_path: /
-          upstream_branch: main   # 请确认
-          target_branch: master   # 请确认
-          # 此处仍可使用 PAT_TOKEN，但上方的全局覆盖已确保所有调用都使用它
-          github_token: ${{ secrets.PAT_TOKEN }}
-          pr_title: '🔄 同步上游TrendRadar模板更新'
-          pr_labels: 'automated-sync,upstream'
-          excluded_files: |
-            config.yaml
-            frequency_words.txt
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: sync updates from upstream TrendRadar"
+          title: "🔄 自动同步：上游 TrendRadar 更新"
+          body: |
+            此 Pull Request 由 GitHub Actions 自动创建，包含来自上游仓库 [sansan0/TrendRadar](https://github.com/sansan0/TrendRadar) 的更新。
+
+            **本次同步已保护以下文件，您的修改将被保留：**
+            - `config.yaml`
+            - `frequency_words.txt`
+
+            请仔细检查其他文件的变更，确认无误后合并此PR。
+          branch: "auto-sync/trendradar" # 用于创建PR的临时分支
+          base: master # 目标分支（请确认您的主分支名是 master 还是 main）
+          delete-branch: true # PR合并后自动删除临时分支
