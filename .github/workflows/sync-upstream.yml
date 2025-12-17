@@ -1,0 +1,63 @@
+# 工作流名称：同步上游TrendRadar仓库更新
+name: Sync Upstream TrendRadar
+
+# 触发条件：支持【手动触发】+【定时触发】（可选：上游更新触发，见进阶部分）
+on:
+  # 手动触发（在GitHub仓库的Actions页面可点击运行）
+  workflow_dispatch:
+  # 定时触发（每天凌晨3点执行，时区为UTC，对应北京时间11点；可调整cron表达式）
+  schedule:
+    - cron: '0 3 * * *'
+
+# 权限配置：需要读写仓库内容的权限（推送代码）
+permissions:
+  contents: write
+
+# 任务定义
+jobs:
+  sync:
+    # 运行环境：使用Ubuntu最新版
+    runs-on: ubuntu-latest
+    steps:
+      # 步骤1：检出当前仓库的代码（拉取所有历史，方便合并）
+      - name: Checkout current repo
+        uses: actions/checkout@v4
+        with:
+          # 拉取所有提交历史（默认只拉取最新1条，合并时需要完整历史）
+          fetch-depth: 0
+          # 若使用默认GITHUB_TOKEN，推送时会触发CI但权限足够；若有特殊需求可替换为PAT
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # 步骤2：配置Git用户信息（必须，否则无法提交代码）
+      - name: Configure Git user
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+      # 步骤3：添加上游仓库的远程地址
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/sansan0/TrendRadar.git
+          # 验证远程地址是否添加成功
+          git remote -v
+
+      # 步骤4：拉取上游仓库的所有分支和提交
+      - name: Fetch upstream updates
+        run: git fetch upstream
+
+      # 步骤5：合并上游最新代码到当前仓库的主分支（默认main，若上游是master需替换）
+      - name: Merge upstream into current branch
+        run: |
+          # 切换到当前仓库的主分支（根据你的仓库分支名调整，如master）
+          git checkout main
+          # 合并上游的main分支（第一次合并时需加--allow-unrelated-histories，因为template的历史分离）
+          # --no-edit：自动合并，不弹出提交信息编辑窗口
+          git merge upstream/main --allow-unrelated-histories --no-edit || {
+            # 若合并失败（存在冲突），这里可自定义处理逻辑（如输出冲突信息并失败）
+            echo "合并上游代码时出现冲突，请手动处理！"
+            exit 1
+          }
+
+      # 步骤6：推送合并后的代码到当前仓库
+      - name: Push to current repo
+        run: git push origin main
