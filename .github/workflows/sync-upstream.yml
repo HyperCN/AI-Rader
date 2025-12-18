@@ -1,77 +1,60 @@
 name: Sync Upstream via PR
 on:
-  workflow_dispatch:
+  workflow_dispatch: # 允许手动触发
   schedule:
-    - cron: '0 3 * * 1' # 每周一 UTC 3点自动检查
+    - cron: '0 3 * * 1' # 每周一UTC时间3点自动运行
 
 permissions:
   contents: write
   pull-requests: write
 
 jobs:
-  create-pr:
+  sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Your Repository
+      # 1. 检出您自己仓库的代码
+      - name: Checkout Your Repo
         uses: actions/checkout@v4
         with:
-          # 仅拉取您自己仓库的代码
-          fetch-depth: 0
+          fetch-depth: 0 # 拉取完整历史
 
-      - name: Restore Protected Files (Prepare)
-        # 先备份您要保护的文件！这是关键。
+      # 2. 配置Git身份
+      - name: Setup Git
         run: |
-          mkdir -p /tmp/protected_files_backup
-          cp -f ./config.yaml /tmp/protected_files_backup/ 2>/dev/null || echo "config.yaml not found in base."
-          cp -f ./frequency_words.txt /tmp/protected_files_backup/ 2>/dev/null || echo "frequency_words.txt not found in base."
-
-      - name: Create Pull Request with Upstream Updates
-        uses: peter-evans/create-pull-request@v5
-        id: pr
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          # 【重要】指定上游仓库作为额外的远程仓库来拉取更新
-          repository: Moladylee/AI-Rader # 您自己的仓库
-          upstream-repository: sansan0/TrendRadar # 上游仓库
-          upstream-branch: master # 上游仓库的分支名
-          # 创建PR的分支设置
-          branch: auto-sync/trendradar # 用于PR的固定分支名，自动创建
-          base: master # PR的目标分支（您仓库的主分支）
-          title: "🔄 自动同步：上游 TrendRadar 更新 [$(date +%Y-%m-%d)]"
-          body: |
-            此 PR 由 GitHub Actions 自动创建，包含来自上游仓库 [sansan0/TrendRadar](https://github.com/sansan0/TrendRadar) 的更新。
-
-            **已保护以下文件 (您的本地版本被保留):**
-            - `config.yaml`
-            - `frequency_words.txt`
-
-            请检查其他文件的变更，确认无误后合并。
-          commit-message: "chore: sync updates from upstream TrendRadar"
-          labels: automated-pr, upstream-sync
-          delete-branch: true # 合并后删除临时分支
-          # 这个开关确保即使上游无更新，工作流也成功（不创建空PR）
-          skip-no-changes: true
-
-      - name: Restore Protected Files (Final)
-        # 在 PR 分支创建后，覆盖掉来自上游的配置文件。
-        if: steps.pr.outputs.pull-request-operation == 'created'
-        run: |
-          echo "正在恢复受保护的文件..."
-          # 切换到Action刚刚创建的PR分支
-          git fetch origin
-          git checkout auto-sync/trendradar
-          # 用我们最初备份的版本覆盖文件
-          cp -f /tmp/protected_files_backup/config.yaml ./ 2>/dev/null || echo "No config.yaml backup to restore."
-          cp -f /tmp/protected_files_backup/frequency_words.txt ./ 2>/dev/null || echo "No frequency_words.txt backup to restore."
-          # 提交更改
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add config.yaml frequency_words.txt
-          # 只有当文件实际有变化时才提交
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: restore protected config files from base branch"
-            git push
-            echo "✅ 受保护文件已恢复并推送。"
-          else
-            echo "ℹ️ 受保护文件无变化，无需提交。"
-          fi
+
+      # 3. 拉取上游仓库的更新到当前工作区
+      - name: Pull Upstream Changes
+        run: |
+          git remote add upstream https://github.com/sansan0/TrendRadar.git 2>/dev/null || true
+          git fetch upstream
+          # 将上游 master 分支合并到当前工作区
+          git merge upstream/master --allow-unrelated-histories --no-edit --strategy-option theirs
+          echo "✅ 上游更新已拉取并合并到工作区。"
+
+      # 4. 保护您的配置文件（用您仓库的版本覆盖）
+      - name: Protect Local Configs
+        run: |
+          # 关键：从您自己仓库的远程分支恢复文件
+          # 请将 `master` 改为您自己仓库的主分支名（main 或 master）
+          git checkout origin/master -- config.yaml frequency_words.txt 2>/dev/null || echo "注意：未找到部分保护文件。"
+          echo "✅ 已恢复受保护的文件 (config.yaml, frequency_words.txt)。"
+
+      # 5. 创建 Pull Request
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: sync updates from upstream TrendRadar"
+          title: "🔄 自动同步：上游 TrendRadar 更新 [$(date +%Y-%m-%d)]"
+          body: |
+            此 PR 包含来自上游仓库 [sansan0/TrendRadar](https://github.com/sansan0/TrendRadar) 的更新。
+            **以下文件已受保护，保持您本地的版本：**
+            - `config.yaml`
+            - `frequency_words.txt`
+            请检查其他变更后合并。
+          branch: auto-sync/trendradar # 用于PR的固定分支名
+          base: master # 🚨重要：改为您自己仓库的目标分支名
+          labels: automated-pr, upstream-sync
+          delete-branch: true
