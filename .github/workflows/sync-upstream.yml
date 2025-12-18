@@ -2,7 +2,7 @@ name: Sync Upstream via PR
 on:
   workflow_dispatch: # 允许手动触发
   schedule:
-    - cron: '0 3 * * 1' # 每周一UTC时间3点自动运行
+    - cron: '0 10 * * *' # 每周一UTC时间3点自动运行
 
 permissions:
   contents: write
