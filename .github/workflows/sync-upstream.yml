@@ -41,6 +41,10 @@ jobs:
           git checkout origin/master -- config.yaml frequency_words.txt 2>/dev/null || echo "注意：未找到部分保护文件。"
           echo "✅ 已恢复受保护的文件 (config.yaml, frequency_words.txt)。"
 
+      - name: Get Current Date
+        id: date
+        run: echo "date=$(date +%Y-%m-%d)" >> $GITHUB_ENV
+
       # 5. 创建 Pull Request
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
